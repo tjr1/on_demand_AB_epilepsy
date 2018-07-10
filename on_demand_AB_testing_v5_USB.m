@@ -22,7 +22,7 @@ function varargout = on_demand_AB_testing_v5_USB(varargin)
 
 % Edit the above text to modify the response to help on_demand_AB_testing_v5_USB
 
-% Last Modified by GUIDE v2.5 09-Jul-2018 15:24:57
+% Last Modified by GUIDE v2.5 10-Jul-2018 10:51:04
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -215,6 +215,9 @@ end
 try
     set(handles.ET_device_ID,'String',struc.ET_device_ID);
 end
+try
+    set(handles.ET_time_plot,'String',struc.ET_time_plot);
+end
 
 guidata(hObject,handles);
 
@@ -272,6 +275,7 @@ struc.ET_threshold_neg=get(handles.t_thresh,'String');
 struc.ET_min_width=get(handles.T_min_width,'String');
 struc.ET_min_spikes_per_two_s=get(handles.T_min_spikes_per_two_s,'String');
 struc.ET_device_ID = get(handles.ET_device_ID,'String');
+struc.ET_time_plot = get(handles.ET_time_plot,'String');
 
 save([path '\settings.mat'], 'struc');
 
@@ -350,8 +354,16 @@ in_chunk = 1;
 ch_out_vec = str2num(get(handles.ET_n_ch_out,'String'));
 n_ch_out = length(ch_out_vec);
 
-for i_ch_out = ch_out_vec
-    figure(i_ch_out+1) % do this early so that it doesn't slow things later
+stim_on_durs = randi(35,10,1);
+stim_off_durs = randi(35,10,1);
+for i_ch_out = 1:n_ch_out
+    figure(i_ch_out)
+    subplot(1,2,1)
+    histogram(stim_on_durs,.5:1:40)
+    title('stim')
+    subplot(1,2,2)
+    histogram(stim_off_durs,.5:1:40)
+    title('no stim')
 end
 
 global stim_remaining
@@ -483,7 +495,7 @@ opt_amp = []; % Volts?
 
 
 %% add listeners
-lh1 = addlistener(s,'DataAvailable', @(src, event) Process_Plot_Save(src,event,mf, handles.A_MainPlot,n_cams,vid,ch_in_vec,seizure_detection_ch_vec,n_ch_out,opt_freq,opt_amp, p, save_mat_path, handles) );
+lh1 = addlistener(s,'DataAvailable', @(src, event) Process_Plot_Save(src,event,mf, handles.A_MainPlot,n_cams,vid,ch_in_vec,seizure_detection_ch_vec,n_ch_out, opt_freq,opt_amp, p, save_mat_path, handles) );
 lh2 = addlistener(s,'DataRequired', @(src, event) Generate_Stim_Vec(src,event,handles));
 
 s.NotifyWhenDataAvailableExceeds = fix(fs*in_chunk); % input buffer treshold, hard coded
@@ -798,7 +810,7 @@ if n_cams == 0
     src = [];
 end
 
-function Process_Plot_Save(src,event,mf,plot_handle,n_cams,vid, ch_in_vec, seizure_detection_ch_vec, n_ch_out,opt_freq,opt_amp, p, save_mat_path, handles) 
+function Process_Plot_Save(src,event,mf,plot_handle,n_cams,vid, ch_in_vec, seizure_detection_ch_vec, n_ch_out, opt_freq,opt_amp, p, save_mat_path, handles) 
 
 % disp('Process_Plot_Save')
 
@@ -856,9 +868,21 @@ channel_scaling = str2num(get(handles.ET_channel_spacing,'String'));
 % channel_spacing = cumsum(2*channel_scaling)-channel_scaling;
 channel_spacing = 1:n_ch;
 
+t1 = round(time_deci(1));
+time_x = round(str2num(get(handles.ET_time_plot,'String')));
+if mod(t1,time_x) == 0
+    hold(plot_handle, 'off')
+end
+
+
+ax = findall(plot_handle,'type', 'axes');
+ax.ColorOrderIndex = 1;
+
 plot(plot_handle, time_deci, data_deci*diag(1./channel_scaling)+repmat(channel_spacing, n_t_deci,1))
 hold(plot_handle, 'on')
 ylim(plot_handle,[-1 channel_spacing(end)+2])
+
+xlim(plot_handle, [t1-rem(t1,time_x) t1-rem(t1,time_x)+time_x])
 
 %% save raw data
 data = event.Data;
@@ -995,13 +1019,12 @@ for i_ch = 1:n_ch_out
     end
     
     if size(posspikes_wide,1)>0
-        plot(plot_handle, detect_time_deci(posspikes_wide(:,1)),(1./channel_scaling(i_ch))*(seizure_detection_ch_vec(i_ch)+1)+posspikes_wide(:,2),'*r')
+        plot(plot_handle, detect_time_deci(posspikes_wide(:,1)),(1./channel_scaling(1+seizure_detection_ch_vec(i_ch)))*posspikes_wide(:,2)+(seizure_detection_ch_vec(i_ch)+1),'*r')
     end
     if size(negspikes_wide,1)>0
-        plot(plot_handle, detect_time_deci(negspikes_wide(:,1)),(1./channel_scaling(i_ch))*(seizure_detection_ch_vec(i_ch)+1)+negspikes_wide(:,2),'*r')
+        plot(plot_handle, detect_time_deci(negspikes_wide(:,1)),(1./channel_scaling(1+seizure_detection_ch_vec(i_ch)))*negspikes_wide(:,2)+(seizure_detection_ch_vec(i_ch)+1),'*r')
     end
 end
-hold(plot_handle, 'off')
 
 mf.spike_count_history(:,:,n_read) = spike_count_history;
 
@@ -1948,6 +1971,29 @@ function ET_device_ID_Callback(hObject, eventdata, handles)
 % --- Executes during object creation, after setting all properties.
 function ET_device_ID_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to ET_device_ID (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+
+function ET_time_plot_Callback(hObject, eventdata, handles)
+% hObject    handle to ET_time_plot (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of ET_time_plot as text
+%        str2double(get(hObject,'String')) returns contents of ET_time_plot as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function ET_time_plot_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to ET_time_plot (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
 
