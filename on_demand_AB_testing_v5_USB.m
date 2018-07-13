@@ -421,6 +421,16 @@ spike_count_history = zeros(round(10*1/in_chunk),n_ch_out,2); % spike_count_hist
 fast_slow_ratio_trigger = zeros(1,n_ch_out,'logical');
 spikes_trigger(n_read,:) = zeros(1,n_ch_out,'logical');
 
+global spike_times_buffer_cell
+spike_times_buffer_cell = cell(2,n_ch_out); % 2 seconds hard coded, most recent spike times from teh past two seconds, newest goes into end, n_ch_out
+
+global Seizure_Start_First_Spike_Time
+Seizure_Start_First_Spike_Time = zeros(1,n_ch_out);
+
+global last_spike_time, Seizure_Start_First_Spike_Time
+
+last_spike_time =  zeros(1,n_ch_out);
+Seizure_Start_First_Spike_Time =  zeros(1,n_ch_out);
 
 next_freq = 10*ones(1,n_ch_out); % initialize arbitrarily to 10 Hz
 next_amp = 0*ones(1,n_ch_out); % initialize arbitrarily to 1 unit
@@ -446,7 +456,7 @@ for i_cam = 1:n_cams
     save(save_mat_path,['meta_time_cam_' num2str(i_cam)],'-nocompression','-append')
 end
 
-save(save_mat_path,'fast_int','slow_int','Seizure_On','Seizure_Off','stim_flag','Seizure_Duration','spike_count_history','fast_slow_ratio_trigger','spikes_trigger','-nocompression','-append')
+save(save_mat_path,'fast_int','slow_int','Seizure_On','Seizure_Off','stim_flag','Seizure_Duration','spike_count_history','fast_slow_ratio_trigger','spikes_trigger','Seizure_Start_First_Spike_Time','last_spike_time', '-nocompression','-append')
 
 spike_count_history = spike_count_history(:,:,1); % remove 3rd dimension
 
@@ -834,6 +844,11 @@ global in_chunk spike_count_history
 
 global pos_spike_count neg_spike_count
 
+global spike_times_buffer_cell
+
+global Seizure_Start_First_Spike_Time last_spike_time
+
+
 
 n_read = n_read+1;
 
@@ -1015,6 +1030,8 @@ for i_ch = 1:n_ch_out
         mf.pos_spike_times(pos_spike_count(1,i_ch)+(1:n_pos_spike(1,i_ch)),i_ch) = pos_spike_times;
         mf.pos_spike_val(pos_spike_count(1,i_ch)+(1:n_pos_spike(1,i_ch)),i_ch) = pos_spike_val;
         pos_spike_count(1,i_ch) = pos_spike_count(1,i_ch) + n_pos_spike(1,i_ch);
+    else
+        pos_spike_times = [];
     end
 
     if not(isempty(negspikes_wide))
@@ -1024,7 +1041,13 @@ for i_ch = 1:n_ch_out
         mf.neg_spike_times(neg_spike_count(1,i_ch)+(1:n_neg_spike(1,i_ch)),i_ch) = neg_spike_times;
         mf.neg_spike_val(neg_spike_count(1,i_ch)+(1:n_neg_spike(1,i_ch)),i_ch) = neg_spike_val;
         neg_spike_count(1,i_ch) = neg_spike_count(1,i_ch) + n_neg_spike(1,i_ch);
+    else
+        neg_spike_times = [];
     end
+    
+    spike_times_buffer_cell = circshift(spike_times_buffer_cell,-1);
+    spike_times_buffer_cell{end,i_ch} = [pos_spike_times(:); neg_spike_times(:)];
+    spike_times_buffer_timeCombined{1,i_ch} = sort( cell2mat( spike_times_buffer_cell(:,i_ch) ) );
     
     if size(posspikes_wide,1)>0
         plot(plot_handle, detect_time_deci(posspikes_wide(:,1)),(1./channel_scaling(1+seizure_detection_ch_vec(i_ch)))*posspikes_wide(:,2)+(seizure_detection_ch_vec(i_ch)+1),'*r')
@@ -1054,7 +1077,13 @@ end
 disp(['spikes trigger = ' num2str(spikes_trigger)])
 mf.spikes_trigger(n_read,:) = spikes_trigger;
 
-%% seizue starts
+for i_ch = 1:n_ch_out
+    if spikes_trigger(1,i_ch) == true
+        last_spike_time(1,i_ch) = max([pos_spike_times(:); neg_spike_times(:)]);
+    end
+end
+
+%% seizure starts
 % Seizure_On(n_read,:) = and(fast_slow_ratio_trigger, spikes_trigger); % add additional logic of triggers here 
 Seizure_On(n_read,:) = spikes_trigger; % add additional logic of triggers here 
 
@@ -1070,12 +1099,22 @@ disp(['Seizure_On = ' num2str(Seizure_On(n_read,:))])
                                         % Seizure_On must be zero for 5
                                         % consecutive seconds to say a
                                         % seizure has ended
-stim_flag = Seizure_On(n_read,:)==1 && Seizure_On(n_read-1,:)==0 && Seizure_On(n_read-2,:)==0 && Seizure_On(n_read-3,:)==0 && Seizure_On(n_read-4,:)==0 && Seizure_On(n_read-5,:)==0;
+stim_flag = and(Seizure_On(n_read,:)==1, Seizure_On(n_read-1,:)==0);
 mf.stim_flag(n_read,:) = stim_flag;
 Seizure_Start_Ind(stim_flag) = n_read;
 
+for i_ch = 1:n_ch_out
+    if stim_flag(i_ch) == 1
+        Seizure_Start_First_Spike_Time(1,i_ch) = min(spike_times_buffer_timeCombined{1,i_ch})
+        mf.Seizure_Start_First_Spike_Time(1, Seizure_Count(i_ch)) = Seizure_Start_First_Spike_Time(1, i_ch);
+    end
+end
+
 %% seizure ends
-Seizure_Off(n_read,:) = and(Seizure_On(n_read,:)==0, Seizure_On(n_read-1,:)==1);
+                                            % indexes negative problem at
+                                            % start, not yet
+                                            % fixed!!!!!!!!!!!!!
+Seizure_Off(n_read,:) = and(and(and(and(and(Seizure_On(n_read,:)==0, Seizure_On(n_read-1,:)==0), Seizure_On(n_read-2,:)==0), Seizure_On(n_read-3,:)==0), Seizure_On(n_read-4,:)==0), Seizure_On(n_read-5,:)==0);
 mf.Seizure_Off(n_read,:) = Seizure_Off(n_read,:);
 
 disp(['Seizure_Off = ' num2str(Seizure_Off(n_read,:))])
@@ -1103,12 +1142,16 @@ disp(['Seizure_Count = ' num2str(Seizure_Count)])
 for i_ch_out = 1:n_ch_out
     if Seizure_Off(n_read,i_ch_out)==1
         % determine seizure length
-        Seizure_Duration(Seizure_Count(1,i_ch_out),i_ch_out) = in_chunk * (n_read- Seizure_Start_Ind(1,i_ch_out));
+        
+        mf.last_spike_time(Seizure_Count(i_ch)) = last_spike_time(1,i_ch);
+        
+        Seizure_Duration(Seizure_Count(1,i_ch_out),i_ch_out) = last_spike_time(1,i_ch) - Seizure_Start_First_Spike_Time(1, i_ch);
         mf.Seizure_Duration(Seizure_Count(1,i_ch_out),i_ch_out) = Seizure_Duration(Seizure_Count(1,i_ch_out),i_ch_out);
         
         duration_amp_freq(Seizure_Count(1,i_ch_out),(i_ch_out-1)*3+1) = Seizure_Duration(Seizure_Count(1,i_ch_out),i_ch_out);
         mf.duration_amp_freq(Seizure_Count(1,i_ch_out),(i_ch_out-1)*3+1) = Seizure_Duration(Seizure_Count(1,i_ch_out),i_ch_out);
         
+        % make stim / no stim histogram
         stim_on_logical = duration_amp_freq(:,(i_ch_out-1)*3+2) == str2num(get(handles.ET_AmplitudeRange,'String'));
         stim_on_rows = duration_amp_freq(stim_on_logical,(i_ch_out-1)*3+(1:3));
         stim_off_rows = duration_amp_freq(not(stim_on_logical),(i_ch_out-1)*3+(1:3));
