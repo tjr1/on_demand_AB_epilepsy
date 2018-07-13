@@ -1067,7 +1067,10 @@ mf.Seizure_On(n_read,:) = Seizure_On(n_read,:);
 disp(['Seizure_On = ' num2str(Seizure_On(n_read,:))])
 
 %% stim when seizure detected
-stim_flag = and(Seizure_On(n_read,:)==1, Seizure_On(n_read-1,:)==0); % only the up thresholds
+                                        % Seizure_On must be zero for 5
+                                        % consecutive seconds to say a
+                                        % seizure has ended
+stim_flag = Seizure_On(n_read,:)==1 && Seizure_On(n_read-1,:)==0 && Seizure_On(n_read-2,:)==0 && Seizure_On(n_read-3,:)==0 && Seizure_On(n_read-4,:)==0 && Seizure_On(n_read-5,:)==0;
 mf.stim_flag(n_read,:) = stim_flag;
 Seizure_Start_Ind(stim_flag) = n_read;
 
