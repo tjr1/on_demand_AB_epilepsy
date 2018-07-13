@@ -22,7 +22,7 @@ function varargout = on_demand_AB_testing_v5_USB(varargin)
 
 % Edit the above text to modify the response to help on_demand_AB_testing_v5_USB
 
-% Last Modified by GUIDE v2.5 10-Jul-2018 10:51:04
+% Last Modified by GUIDE v2.5 10-Jul-2018 15:32:19
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -218,6 +218,12 @@ end
 try
     set(handles.ET_time_plot,'String',struc.ET_time_plot);
 end
+try
+    set(handles.ET_per_n_seconds,'String',struc.ET_per_n_seconds);
+end
+try 
+    set(handles.ET_end_max_spikes,'String',struc.ET_end_max_spikes);
+end
 
 guidata(hObject,handles);
 
@@ -276,6 +282,8 @@ struc.ET_min_width=get(handles.T_min_width,'String');
 struc.ET_min_spikes_per_two_s=get(handles.T_min_spikes_per_two_s,'String');
 struc.ET_device_ID = get(handles.ET_device_ID,'String');
 struc.ET_time_plot = get(handles.ET_time_plot,'String');
+struc.ET_per_n_seconds = get(handles.ET_per_n_seconds,'String');
+struc.ET_end_max_spikes = get(handles.ET_end_max_spikes,'String');
 
 save([path '\settings.mat'], 'struc');
 
@@ -384,7 +392,7 @@ ch_in_vec = str2num(get(handles.ET_n_ch_in,'String')); % hard coded 1 input chan
 n_ch_in = length(ch_in_vec);
 
 for i_ch = ch_in_vec % add ephys recording channels
-    if length(devices) == 1
+    if strcmp('USB-6221 (BNC)',device_ID_str) % when connected to a USB-6221, use channels 4-7, because that's what used in imha
         addAnalogInputChannel(s,NI_dev.ID, i_ch+4, 'Voltage');
     else
         addAnalogInputChannel(s,NI_dev.ID, i_ch, 'Voltage');
@@ -409,7 +417,7 @@ global pos_spike_count neg_spike_count
 pos_spike_count = zeros(1,n_ch_out);
 neg_spike_count = zeros(1,n_ch_out);
 
-spike_count_history = zeros(fix(2*1/in_chunk),n_ch_out,2); % giving it an extra dimension to initialize the file
+spike_count_history = zeros(round(10*1/in_chunk),n_ch_out,2); % spike_count_history is hard coded to 10 seconds, extra dimension to make file 3D
 fast_slow_ratio_trigger = zeros(1,n_ch_out,'logical');
 spikes_trigger(n_read,:) = zeros(1,n_ch_out,'logical');
 
@@ -440,7 +448,7 @@ end
 
 save(save_mat_path,'fast_int','slow_int','Seizure_On','Seizure_Off','stim_flag','Seizure_Duration','spike_count_history','fast_slow_ratio_trigger','spikes_trigger','-nocompression','-append')
 
-spike_count_history = zeros(fix(2*1/in_chunk),n_ch_out); % removing extra dimension
+spike_count_history = spike_count_history(:,:,1); % remove 3rd dimension
 
 clear data
 mf = matfile(save_mat_path,'Writable',true);
@@ -757,7 +765,7 @@ end
 function [vid, src] = setup_video(n_cams)
     %% setup video
 
-low_res_flag = 1;
+low_res_flag = 0;
 
 dev_info = imaqhwinfo('winvideo');
 default_format = dev_info.DeviceInfo(1).DefaultFormat;
@@ -1030,10 +1038,12 @@ mf.spike_count_history(:,:,n_read) = spike_count_history;
 
 min_spikes_per_two_s_vec = str2num(get(handles.ET_min_spikes_per_two_s,'String'));
 
+start_seizure_n_seconds = 2; % seconds, hard coded
+
 for i_ch = 1:n_ch_out
-    s_spikes = sum(spike_count_history(:,i_ch))
+    s_spikes = sum(spike_count_history(end-start_seizure_n_seconds+1:end,i_ch))
     
-    if sum(spike_count_history(:,i_ch))>=min_spikes_per_two_s_vec(i_ch)
+    if sum(spike_count_history(end-start_seizure_n_seconds+1:end,i_ch))>=min_spikes_per_two_s_vec(i_ch)
         spikes_trigger(1,i_ch) = true;
     else
         spikes_trigger(1,i_ch) = false;
@@ -1994,6 +2004,52 @@ function ET_time_plot_Callback(hObject, eventdata, handles)
 % --- Executes during object creation, after setting all properties.
 function ET_time_plot_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to ET_time_plot (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+
+function ET_end_max_spikes_Callback(hObject, eventdata, handles)
+% hObject    handle to ET_end_max_spikes (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of ET_end_max_spikes as text
+%        str2double(get(hObject,'String')) returns contents of ET_end_max_spikes as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function ET_end_max_spikes_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to ET_end_max_spikes (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+
+function ET_per_n_seconds_Callback(hObject, eventdata, handles)
+% hObject    handle to ET_per_n_seconds (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of ET_per_n_seconds as text
+%        str2double(get(hObject,'String')) returns contents of ET_per_n_seconds as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function ET_per_n_seconds_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to ET_per_n_seconds (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
 
