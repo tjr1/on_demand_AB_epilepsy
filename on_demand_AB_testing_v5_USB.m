@@ -1027,10 +1027,12 @@ for i_ch = 1:n_ch_out
     end
     
     if size(posspikes_wide,1)>0
-        plot(plot_handle, detect_time_deci(posspikes_wide(:,1)),(1./channel_scaling(1+seizure_detection_ch_vec(i_ch)))*posspikes_wide(:,2)+(seizure_detection_ch_vec(i_ch)+1),'*r')
+        ch_ind = find(seizure_detection_ch_vec(i_ch) == ch_in_vec);
+        plot(plot_handle, detect_time_deci(posspikes_wide(:,1)),(1./channel_scaling(ch_ind))*posspikes_wide(:,2)+ch_ind,'*r')
     end
     if size(negspikes_wide,1)>0
-        plot(plot_handle, detect_time_deci(negspikes_wide(:,1)),(1./channel_scaling(1+seizure_detection_ch_vec(i_ch)))*negspikes_wide(:,2)+(seizure_detection_ch_vec(i_ch)+1),'*r')
+        ch_ind = find(seizure_detection_ch_vec(i_ch) == ch_in_vec);
+        plot(plot_handle, detect_time_deci(negspikes_wide(:,1)),(1./channel_scaling(ch_ind))*negspikes_wide(:,2)+ch_ind,'*r')
     end
 end
 
