@@ -218,12 +218,7 @@ end
 try
     set(handles.ET_time_plot,'String',struc.ET_time_plot);
 end
-try
-    set(handles.ET_per_n_seconds,'String',struc.ET_per_n_seconds);
-end
-try 
-    set(handles.ET_end_max_spikes,'String',struc.ET_end_max_spikes);
-end
+
 
 guidata(hObject,handles);
 
@@ -282,8 +277,6 @@ struc.ET_min_width=get(handles.T_min_width,'String');
 struc.ET_min_spikes_per_two_s=get(handles.T_min_spikes_per_two_s,'String');
 struc.ET_device_ID = get(handles.ET_device_ID,'String');
 struc.ET_time_plot = get(handles.ET_time_plot,'String');
-struc.ET_per_n_seconds = get(handles.ET_per_n_seconds,'String');
-struc.ET_end_max_spikes = get(handles.ET_end_max_spikes,'String');
 
 save([path '\settings.mat'], 'struc');
 
@@ -435,6 +428,9 @@ Seizure_Start_First_Spike_Time =  zeros(1,n_ch_out);
 next_freq = 10*ones(1,n_ch_out); % initialize arbitrarily to 10 Hz
 next_amp = 0*ones(1,n_ch_out); % initialize arbitrarily to 1 unit
 
+global exclude_flag
+exclude_flag = zeros(1,n_ch_out,'logical');
+
 set(handles.T_NextFreq,'String',num2str(next_freq));
 set(handles.T_NextAmp,'String',num2str(next_amp));
 
@@ -456,7 +452,7 @@ for i_cam = 1:n_cams
     save(save_mat_path,['meta_time_cam_' num2str(i_cam)],'-nocompression','-append')
 end
 
-save(save_mat_path,'fast_int','slow_int','Seizure_On','Seizure_Off','stim_flag','Seizure_Duration','spike_count_history','fast_slow_ratio_trigger','spikes_trigger','Seizure_Start_First_Spike_Time','last_spike_time', '-nocompression','-append')
+save(save_mat_path,'fast_int','slow_int','Seizure_On','Seizure_Off','stim_flag','Seizure_Duration','spike_count_history','fast_slow_ratio_trigger','spikes_trigger','Seizure_Start_First_Spike_Time','last_spike_time','exclude_flag', '-nocompression','-append')
 
 spike_count_history = spike_count_history(:,:,1); % remove 3rd dimension
 
@@ -848,6 +844,8 @@ global spike_times_buffer_cell
 
 global Seizure_Start_First_Spike_Time last_spike_time
 
+global exclude_flag
+
 
 
 n_read = n_read+1;
@@ -1087,7 +1085,12 @@ end
 
 %% seizure starts
 % Seizure_On(n_read,:) = and(fast_slow_ratio_trigger, spikes_trigger); % add additional logic of triggers here 
-Seizure_On(n_read,:) = spikes_trigger; % add additional logic of triggers here 
+
+if n_read >5 % no seizures for the first 5 seconds.
+    Seizure_On(n_read,:) = spikes_trigger; % add additional logic of triggers here 
+else
+    Seizure_On(n_read,:) = zeros(1,n_ch_out);
+end
 
 if str2num(get(handles.ET_open_loop,'String')) == 1
     Seizure_On(n_read,:) = rand(1,n_ch_out)<.2; % 10% chance of  seizure per chunk
@@ -1098,12 +1101,14 @@ mf.Seizure_On(n_read,:) = Seizure_On(n_read,:);
 disp(['Seizure_On = ' num2str(Seizure_On(n_read,:))])
 
 %% stim when seizure detected
-                                        % Seizure_On must be zero for 5
-                                        % consecutive seconds to say a
-                                        % seizure has ended
-stim_flag = and(Seizure_On(n_read,:)==1, Seizure_On(n_read-1,:)==0);
+
+stim_flag = and( and(Seizure_On(n_read,:)==1, Seizure_On(n_read-1,:)==0), exclude_flag == 0); % need to check exclude flag
 mf.stim_flag(n_read,:) = stim_flag;
 Seizure_Start_Ind(stim_flag) = n_read;
+exclude_flag(stim_flag) = 1;
+mf.exclude_flag(n_read,:) = exclude_flag;
+
+Seizure_Count = Seizure_Count + stim_flag;
 
 for i_ch = 1:n_ch_out
     if stim_flag(i_ch) == 1
@@ -1113,16 +1118,17 @@ for i_ch = 1:n_ch_out
 end
 
 %% seizure ends
-                                            % indexes negative problem at
-                                            % start, not yet
-                                            % fixed!!!!!!!!!!!!!
-Seizure_Off(n_read,:) = and(and(and(and(and(Seizure_On(n_read,:)==0, Seizure_On(n_read-1,:)==0), Seizure_On(n_read-2,:)==0), Seizure_On(n_read-3,:)==0), Seizure_On(n_read-4,:)==0), Seizure_On(n_read-5,:)==0);
+if n_read >5 % no seizures for the first 5 seconds.
+    Seizure_Off(n_read,:) = and(and(and(and(and(Seizure_On(n_read,:)==0, Seizure_On(n_read-1,:)==0), Seizure_On(n_read-2,:)==0), Seizure_On(n_read-3,:)==0), Seizure_On(n_read-4,:)==0), Seizure_On(n_read-5,:)==1);
+else
+    Seizure_Off(n_read,:) = zeros(1,n_ch_out);
+end
+
 mf.Seizure_Off(n_read,:) = Seizure_Off(n_read,:);
 
 disp(['Seizure_Off = ' num2str(Seizure_Off(n_read,:))])
 
 %% count seizures
-Seizure_Count = Seizure_Count + stim_flag;
 for i_ch_out = 1:n_ch_out
     if stim_flag(i_ch_out)
         stim_freq(Seizure_Count(1,i_ch_out),i_ch_out) = next_freq(1,i_ch_out);
@@ -1143,11 +1149,14 @@ disp(['Seizure_Count = ' num2str(Seizure_Count)])
 %% determine seizure duration
 for i_ch_out = 1:n_ch_out
     if Seizure_Off(n_read,i_ch_out)==1
+        % reset exclude flag
+        exclude_flag(1,i_ch_out) = 0;
+        
         % determine seizure length
         
-        mf.last_spike_time(Seizure_Count(i_ch)) = last_spike_time(1,i_ch);
+        mf.last_spike_time(Seizure_Count(1,i_ch),i_ch_out) = last_spike_time(1,i_ch_out);
         
-        Seizure_Duration(Seizure_Count(1,i_ch_out),i_ch_out) = last_spike_time(1,i_ch) - Seizure_Start_First_Spike_Time(1, i_ch);
+        Seizure_Duration(Seizure_Count(1,i_ch_out),i_ch_out) = last_spike_time(1,i_ch_out) - Seizure_Start_First_Spike_Time(1, i_ch_out);
         mf.Seizure_Duration(Seizure_Count(1,i_ch_out),i_ch_out) = Seizure_Duration(Seizure_Count(1,i_ch_out),i_ch_out);
         
         duration_amp_freq(Seizure_Count(1,i_ch_out),(i_ch_out-1)*3+1) = Seizure_Duration(Seizure_Count(1,i_ch_out),i_ch_out);
