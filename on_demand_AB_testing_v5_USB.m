@@ -22,7 +22,7 @@ function varargout = on_demand_AB_testing_v5_USB(varargin)
 
 % Edit the above text to modify the response to help on_demand_AB_testing_v5_USB
 
-% Last Modified by GUIDE v2.5 10-Jul-2018 15:32:19
+% Last Modified by GUIDE v2.5 18-Jul-2018 09:40:27
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -218,6 +218,9 @@ end
 try
     set(handles.ET_time_plot,'String',struc.ET_time_plot);
 end
+try
+    set(handles.ET_exclusion_time,'String',struc.ET_exclusion_time);
+end
 
 
 guidata(hObject,handles);
@@ -277,6 +280,7 @@ struc.ET_min_width=get(handles.T_min_width,'String');
 struc.ET_min_spikes_per_two_s=get(handles.T_min_spikes_per_two_s,'String');
 struc.ET_device_ID = get(handles.ET_device_ID,'String');
 struc.ET_time_plot = get(handles.ET_time_plot,'String');
+struc.ET_exclusion_time = get(handles.ET_exclusion_time,'String');
 
 save([path '\settings.mat'], 'struc');
 
@@ -296,11 +300,11 @@ rng(17);
 
 %% 
 
-global q
-
-p = gcp();
-q{1,1} = parallel.pool.PollableDataQueue;
-q{1,2} = parallel.pool.PollableDataQueue;
+% global q
+% 
+% p = gcp();
+% q{1,1} = parallel.pool.PollableDataQueue;
+% q{1,2} = parallel.pool.PollableDataQueue;
 
 %% create save folder
 
@@ -431,6 +435,9 @@ next_amp = 0*ones(1,n_ch_out); % initialize arbitrarily to 1 unit
 global exclude_flag
 exclude_flag = zeros(1,n_ch_out,'logical');
 
+global time_out
+time_out = zeros(1,n_ch_out);
+
 set(handles.T_NextFreq,'String',num2str(next_freq));
 set(handles.T_NextAmp,'String',num2str(next_amp));
 
@@ -452,7 +459,7 @@ for i_cam = 1:n_cams
     save(save_mat_path,['meta_time_cam_' num2str(i_cam)],'-nocompression','-append')
 end
 
-save(save_mat_path,'fast_int','slow_int','Seizure_On','Seizure_Off','stim_flag','Seizure_Duration','spike_count_history','fast_slow_ratio_trigger','spikes_trigger','Seizure_Start_First_Spike_Time','last_spike_time','exclude_flag', '-nocompression','-append')
+save(save_mat_path,'fast_int','slow_int','Seizure_On','Seizure_Off','stim_flag','Seizure_Duration','spike_count_history','fast_slow_ratio_trigger','spikes_trigger','Seizure_Start_First_Spike_Time','last_spike_time','exclude_flag','time_out', '-nocompression','-append')
 
 spike_count_history = spike_count_history(:,:,1); % remove 3rd dimension
 
@@ -828,6 +835,8 @@ function Process_Plot_Save(src,event,mf,plot_handle,n_cams,vid, ch_in_vec, seizu
 
 % disp('Process_Plot_Save')
 
+disp('..........')
+
 global stim_flag
 
 global duration_amp_freq
@@ -844,7 +853,7 @@ global spike_times_buffer_cell
 
 global Seizure_Start_First_Spike_Time last_spike_time
 
-global exclude_flag
+global exclude_flag time_out
 
 
 
@@ -1064,7 +1073,7 @@ min_spikes_per_two_s_vec = str2num(get(handles.ET_min_spikes_per_two_s,'String')
 start_seizure_n_seconds = 2; % seconds, hard coded
 
 for i_ch = 1:n_ch_out
-    s_spikes = sum(spike_count_history(end-start_seizure_n_seconds+1:end,i_ch))
+    s_spikes = sum(spike_count_history(end-start_seizure_n_seconds+1:end,i_ch));
     
     if sum(spike_count_history(end-start_seizure_n_seconds+1:end,i_ch))>=min_spikes_per_two_s_vec(i_ch)
         spikes_trigger(1,i_ch) = true;
@@ -1079,7 +1088,9 @@ mf.spikes_trigger(n_read,:) = spikes_trigger;
 
 for i_ch = 1:n_ch_out
     if spikes_trigger(1,i_ch) == true
-        last_spike_time(1,i_ch) = max([pos_spike_times(:); neg_spike_times(:)]);
+        if not(isempty([pos_spike_times(:); neg_spike_times(:)]))
+            last_spike_time(1,i_ch) = max([pos_spike_times(:); neg_spike_times(:)]);
+        end
     end
 end
 
@@ -1102,7 +1113,10 @@ disp(['Seizure_On = ' num2str(Seizure_On(n_read,:))])
 
 %% stim when seizure detected
 
-stim_flag = and( and(Seizure_On(n_read,:)==1, Seizure_On(n_read-1,:)==0), exclude_flag == 0); % need to check exclude flag
+time_out = time_out - in_chunk; % time_out counts down from ET_excusion_time.  If it is at or below zero, then you can stim.
+mf.time_out(n_read,:) = time_out;
+
+stim_flag = and( and( and(Seizure_On(n_read,:)==1, Seizure_On(n_read-1,:)==0), exclude_flag == 0), time_out<=0); % checks the exclusion flag and the time_out
 mf.stim_flag(n_read,:) = stim_flag;
 Seizure_Start_Ind(stim_flag) = n_read;
 exclude_flag(stim_flag) = 1;
@@ -1119,6 +1133,7 @@ end
 
 %% seizure ends
 if n_read >5 % no seizures for the first 5 seconds.
+    % a seizure is only done if it fails the seizure definition for 5 consecutive seconds
     Seizure_Off(n_read,:) = and(and(and(and(and(Seizure_On(n_read,:)==0, Seizure_On(n_read-1,:)==0), Seizure_On(n_read-2,:)==0), Seizure_On(n_read-3,:)==0), Seizure_On(n_read-4,:)==0), Seizure_On(n_read-5,:)==1);
 else
     Seizure_Off(n_read,:) = zeros(1,n_ch_out);
@@ -1151,7 +1166,8 @@ for i_ch_out = 1:n_ch_out
     if Seizure_Off(n_read,i_ch_out)==1
         % reset exclude flag
         exclude_flag(1,i_ch_out) = 0;
-        
+        time_out(1,i_ch_out) = str2num(get(handles.ET_exclusion_time,'String'));
+
         % determine seizure length
         
         mf.last_spike_time(Seizure_Count(1,i_ch),i_ch_out) = last_spike_time(1,i_ch_out);
@@ -1190,6 +1206,9 @@ for i_ch_out = 1:n_ch_out
 
     end
 end
+
+disp(['exclude_flag = ' num2str(exclude_flag)])
+disp(['time_out = ' num2str(time_out)])
 
 % for i_ch_out = 1:n_ch_out
 %     [res, gotMsg] = poll(q{1,i_ch_out}, .05); % should save each res
@@ -1249,7 +1268,7 @@ n_ch_out = length(stim_flag);
 
 dt = 1/fs;
 
-disp(['stim flag = ' num2str(stim_flag)])
+% disp(['stim flag = ' num2str(stim_flag)])
 
 n_t = fix(fs*out_chunk);
 
@@ -2107,6 +2126,29 @@ function ET_per_n_seconds_Callback(hObject, eventdata, handles)
 % --- Executes during object creation, after setting all properties.
 function ET_per_n_seconds_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to ET_per_n_seconds (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+
+function ET_exclusion_time_Callback(hObject, eventdata, handles)
+% hObject    handle to ET_exclusion_time (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of ET_exclusion_time as text
+%        str2double(get(hObject,'String')) returns contents of ET_exclusion_time as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function ET_exclusion_time_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to ET_exclusion_time (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
 
