@@ -814,7 +814,9 @@ for i_cam = 1:n_cams
     preview(vid(i_cam))
 end
 
-choice = menu('Preview Control','End preview and continue');
+if n_cams>0
+    choice = menu('Preview Control','End preview and continue');
+end
 
 for i_cam = 1:n_cams
     closepreview(vid(i_cam))
@@ -841,7 +843,7 @@ global stim_flag
 
 global duration_amp_freq
 
-global q
+% global q
 
 global n_read fast_int slow_int Seizure_On Seizure_Off Seizure_Count Seizure_Duration stim_amp stim_freq Seizure_Start_Ind next_freq next_amp
 
