@@ -432,9 +432,6 @@ Seizure_Start_First_Spike_Time =  zeros(1,n_ch_out);
 next_freq = 10*ones(1,n_ch_out); % initialize arbitrarily to 10 Hz
 next_amp = 0*ones(1,n_ch_out); % initialize arbitrarily to 1 unit
 
-global exclude_flag
-exclude_flag = zeros(1,n_ch_out,'logical');
-
 global time_out
 time_out = zeros(1,n_ch_out);
 
@@ -459,7 +456,7 @@ for i_cam = 1:n_cams
     save(save_mat_path,['meta_time_cam_' num2str(i_cam)],'-nocompression','-append')
 end
 
-save(save_mat_path,'fast_int','slow_int','Seizure_On','Seizure_Off','stim_flag','Seizure_Duration','spike_count_history','fast_slow_ratio_trigger','spikes_trigger','Seizure_Start_First_Spike_Time','last_spike_time','exclude_flag','time_out', '-nocompression','-append')
+save(save_mat_path,'fast_int','slow_int','Seizure_On','Seizure_Off','stim_flag','Seizure_Duration','spike_count_history','fast_slow_ratio_trigger','spikes_trigger','Seizure_Start_First_Spike_Time','last_spike_time','time_out', '-nocompression','-append')
 
 spike_count_history = spike_count_history(:,:,1); % remove 3rd dimension
 
@@ -855,7 +852,7 @@ global spike_times_buffer_cell
 
 global Seizure_Start_First_Spike_Time last_spike_time
 
-global exclude_flag time_out
+global time_out
 
 
 
@@ -1118,11 +1115,9 @@ disp(['Seizure_On = ' num2str(Seizure_On(n_read,:))])
 time_out = time_out - in_chunk; % time_out counts down from ET_excusion_time.  If it is at or below zero, then you can stim.
 mf.time_out(n_read,:) = time_out;
 
-stim_flag = and( and( and(Seizure_On(n_read,:)==1, Seizure_On(n_read-1,:)==0), exclude_flag == 0), time_out<=0); % checks the exclusion flag and the time_out
+stim_flag = and( and(Seizure_On(n_read,:)==1, Seizure_On(n_read-1,:)==0), time_out<=0); % checks the exclusion flag and the time_out
 mf.stim_flag(n_read,:) = stim_flag;
 Seizure_Start_Ind(stim_flag) = n_read;
-exclude_flag(stim_flag) = 1;
-mf.exclude_flag(n_read,:) = exclude_flag;
 
 Seizure_Count = Seizure_Count + stim_flag;
 
@@ -1166,8 +1161,6 @@ disp(['Seizure_Count = ' num2str(Seizure_Count)])
 %% determine seizure duration
 for i_ch_out = 1:n_ch_out
     if Seizure_Off(n_read,i_ch_out)==1
-        % reset exclude flag
-        exclude_flag(1,i_ch_out) = 0;
         time_out(1,i_ch_out) = str2num(get(handles.ET_exclusion_time,'String'));
 
         % determine seizure length
@@ -1209,7 +1202,6 @@ for i_ch_out = 1:n_ch_out
     end
 end
 
-disp(['exclude_flag = ' num2str(exclude_flag)])
 disp(['time_out = ' num2str(time_out)])
 
 % for i_ch_out = 1:n_ch_out
