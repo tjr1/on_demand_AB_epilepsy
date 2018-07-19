@@ -516,7 +516,7 @@ opt_amp = []; % Volts?
 
 
 %% add listeners
-lh1 = addlistener(s,'DataAvailable', @(src, event) Process_Plot_Save(src,event,mf, handles.A_MainPlot,n_cams,vid,ch_in_vec,seizure_detection_ch_vec,n_ch_out, opt_freq,opt_amp, p, save_mat_path, handles) );
+lh1 = addlistener(s,'DataAvailable', @(src, event) Process_Plot_Save(src,event,mf, handles.A_MainPlot,n_cams,vid,ch_in_vec,seizure_detection_ch_vec,n_ch_out, opt_freq,opt_amp, save_mat_path, handles) );
 lh2 = addlistener(s,'DataRequired', @(src, event) Generate_Stim_Vec(src,event,handles));
 
 s.NotifyWhenDataAvailableExceeds = fix(fs*in_chunk); % input buffer treshold, hard coded
@@ -831,7 +831,7 @@ if n_cams == 0
     src = [];
 end
 
-function Process_Plot_Save(src,event,mf,plot_handle,n_cams,vid, ch_in_vec, seizure_detection_ch_vec, n_ch_out, opt_freq,opt_amp, p, save_mat_path, handles) 
+function Process_Plot_Save(src,event,mf,plot_handle,n_cams,vid, ch_in_vec, seizure_detection_ch_vec, n_ch_out, opt_freq,opt_amp, save_mat_path, handles) 
 
 % disp('Process_Plot_Save')
 
