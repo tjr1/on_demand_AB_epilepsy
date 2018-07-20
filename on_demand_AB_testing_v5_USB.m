@@ -416,6 +416,7 @@ neg_spike_count = zeros(1,n_ch_out);
 
 spike_count_history = zeros(round(10*1/in_chunk),n_ch_out,2); % spike_count_history is hard coded to 10 seconds, extra dimension to make file 3D
 fast_slow_ratio_trigger = zeros(1,n_ch_out,'logical');
+global spikes_trigger
 spikes_trigger(n_read,:) = zeros(1,n_ch_out,'logical');
 
 global spike_times_buffer_cell
@@ -456,7 +457,7 @@ for i_cam = 1:n_cams
     save(save_mat_path,['meta_time_cam_' num2str(i_cam)],'-nocompression','-append')
 end
 
-save(save_mat_path,'fast_int','slow_int','Seizure_On','Seizure_Off','stim_flag','Seizure_Duration','spike_count_history','fast_slow_ratio_trigger','spikes_trigger','Seizure_Start_First_Spike_Time','last_spike_time','time_out', '-nocompression','-append')
+save(save_mat_path,'fast_int','slow_int','Seizure_On','Seizure_Off','stim_flag','Seizure_Duration','spike_count_history','fast_slow_ratio_trigger','spikes_trigger','Seizure_Start_First_Spike_Time','last_spike_time','time_out','spikes_trigger','-nocompression','-append')
 
 spike_count_history = spike_count_history(:,:,1); % remove 3rd dimension
 
@@ -854,6 +855,8 @@ global Seizure_Start_First_Spike_Time last_spike_time
 
 global time_out
 
+global spikes_trigger
+
 
 
 n_read = n_read+1;
@@ -1075,18 +1078,18 @@ for i_ch = 1:n_ch_out
     s_spikes = sum(spike_count_history(end-start_seizure_n_seconds+1:end,i_ch));
     
     if sum(spike_count_history(end-start_seizure_n_seconds+1:end,i_ch))>=min_spikes_per_two_s_vec(i_ch)
-        spikes_trigger(1,i_ch) = true;
+        spikes_trigger(n_read,i_ch) = true;
     else
-        spikes_trigger(1,i_ch) = false;
+        spikes_trigger(n_read,i_ch) = false;
     end
 end
 
 % disp(['fast/slow trigger = ' num2str(fast_slow_ratio_trigger)])
-disp(['spikes trigger = ' num2str(spikes_trigger)])
-mf.spikes_trigger(n_read,:) = spikes_trigger;
+disp(['spikes trigger = ' num2str(spikes_trigger(n_read,:))])
+mf.spikes_trigger(n_read,:) = spikes_trigger(n_read,:);
 
 for i_ch = 1:n_ch_out
-    if spikes_trigger(1,i_ch) == true
+    if spikes_trigger(n_read,i_ch) == true
         if not(isempty([pos_spike_times(:); neg_spike_times(:)]))
             last_spike_time(1,i_ch) = max([pos_spike_times(:); neg_spike_times(:)]);
         end
@@ -1096,26 +1099,62 @@ end
 %% seizure starts
 % Seizure_On(n_read,:) = and(fast_slow_ratio_trigger, spikes_trigger); % add additional logic of triggers here 
 
-if n_read >5 % no seizures for the first 5 seconds.
-    Seizure_On(n_read,:) = spikes_trigger; % add additional logic of triggers here 
-else
-    Seizure_On(n_read,:) = zeros(1,n_ch_out);
+% % if and(and(n_read >5, time_out<=0), Seizure_  % no seizures for the first 5 seconds.
+%     Seizure_On(n_read,:) = spikes_trigger; % add additional logic of triggers here 
+% else
+%     Seizure_On(n_read,:) = zeros(1,n_ch_out);
+% end
+for i_ch = 1:n_ch_out
+    if n_read > 5
+        if (spikes_trigger(n_read-5,i_ch) == 0) && (spikes_trigger(n_read-4,i_ch) == 0) && (spikes_trigger(n_read-3,i_ch) == 0) && (spikes_trigger(n_read-2,i_ch) == 0) && (spikes_trigger(n_read-1,i_ch) == 0) && (spikes_trigger(n_read,i_ch) == 1) && (time_out(1,i_ch) <=0) % if seizure conditions satisfied, and time_out has counted down 
+            Seizure_On(n_read,i_ch) = 1;
+        else % no change
+            Seizure_On(n_read,i_ch) = Seizure_On(n_read-1,i_ch);
+        end
+    end
 end
 
 if str2num(get(handles.ET_open_loop,'String')) == 1
     Seizure_On(n_read,:) = rand(1,n_ch_out)<.2; % 10% chance of  seizure per chunk
 end
 
-mf.Seizure_On(n_read,:) = Seizure_On(n_read,:);
+%% seizure ends
+% if n_read >5 % no seizures for the first 5 seconds.
+%     % a seizure is only done if it fails the seizure definition for 5 consecutive seconds
+%     Seizure_Off(n_read,:) = and(and(and(and(and(Seizure_On(n_read,:)==0, Seizure_On(n_read-1,:)==0), Seizure_On(n_read-2,:)==0), Seizure_On(n_read-3,:)==0), Seizure_On(n_read-4,:)==0), Seizure_On(n_read-5,:)==1);
+% else
+%     Seizure_Off(n_read,:) = zeros(1,n_ch_out);
+% end
 
+if n_read>5
+    for i_ch = 1:n_ch_out
+        if spikes_trigger(n_read,i_ch) == 0 && spikes_trigger(n_read-1,i_ch) == 0 && spikes_trigger(n_read-2,i_ch) == 0 && spikes_trigger(n_read-3,i_ch) == 0 && spikes_trigger(n_read-4,i_ch) == 0
+            Seizure_On(n_read,i_ch) = 0;
+        end
+    end
+else
+    Seizure_On(n_read,i_ch) = 0;
+end
+
+if n_read > 1
+    Seizure_Off(n_read,:) = and(Seizure_On(n_read,:)==0, Seizure_On(n_read-1,:)==1);
+else
+    Seizure_Off(n_read,:) = 0;
+end
+
+%% log Seizure_On and Seizure_Off
+mf.Seizure_On(n_read,:) = Seizure_On(n_read,:);
 disp(['Seizure_On = ' num2str(Seizure_On(n_read,:))])
+
+mf.Seizure_Off(n_read,:) = Seizure_Off(n_read,:);
+disp(['Seizure_Off = ' num2str(Seizure_Off(n_read,:))])
 
 %% stim when seizure detected
 
 time_out = time_out - in_chunk; % time_out counts down from ET_excusion_time.  If it is at or below zero, then you can stim.
 mf.time_out(n_read,:) = time_out;
 
-stim_flag = and( and(Seizure_On(n_read,:)==1, Seizure_On(n_read-1,:)==0), time_out<=0); % checks the exclusion flag and the time_out
+stim_flag = and(Seizure_On(n_read,:)==1, Seizure_On(n_read-1,:)==0); % checks the exclusion flag and the time_out
 mf.stim_flag(n_read,:) = stim_flag;
 Seizure_Start_Ind(stim_flag) = n_read;
 
@@ -1127,18 +1166,6 @@ for i_ch = 1:n_ch_out
         mf.Seizure_Start_First_Spike_Time(1, Seizure_Count(i_ch)) = Seizure_Start_First_Spike_Time(1, i_ch);
     end
 end
-
-%% seizure ends
-if n_read >5 % no seizures for the first 5 seconds.
-    % a seizure is only done if it fails the seizure definition for 5 consecutive seconds
-    Seizure_Off(n_read,:) = and(and(and(and(and(Seizure_On(n_read,:)==0, Seizure_On(n_read-1,:)==0), Seizure_On(n_read-2,:)==0), Seizure_On(n_read-3,:)==0), Seizure_On(n_read-4,:)==0), Seizure_On(n_read-5,:)==1);
-else
-    Seizure_Off(n_read,:) = zeros(1,n_ch_out);
-end
-
-mf.Seizure_Off(n_read,:) = Seizure_Off(n_read,:);
-
-disp(['Seizure_Off = ' num2str(Seizure_Off(n_read,:))])
 
 %% count seizures
 for i_ch_out = 1:n_ch_out
